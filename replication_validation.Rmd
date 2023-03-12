@@ -1,0 +1,685 @@
+
+
+### Validate figure 5 with the attracted developers and social media posts within one year after project creation
+```{r}
+library(DescTools)
+library(dplyr)
+library(boot)
+library(hash)
+library(ggplot2)
+library(gridExtra)
+library(relaimpo)
+library(gdata)
+
+community_name = 'Python' # R or Python
+
+longitudional_peak_media = read_csv(sprintf('./data/media_post_relative_time_com_%s_no_so.csv', community_name))
+
+
+longitudional_peak_devstar = read_csv(sprintf('./data/dev_star_activity_com_%s_complete_period.csv', community_name))
+df_raw = merge(longitudional_peak_media, longitudional_peak_devstar, by = 'repo_slug')
+df_data = setNames(df_raw[c('repo_slug', 'one_hop_author_within_owner_count', 'two_hop_author_within_owner_count', 'three_hop_author_within_owner_count', 'total_author_at_the_time_count', 'new_author_one_hop_count_within_oneyear', 'new_author_two_hop_count_within_oneyear', 'new_author_three_hop_count_within_oneyear', 'new_author_fourormore_hop_count_within_oneyear', 'stargazer_one_hop_count_within_oneyear', 'stargazer_two_hop_count_within_oneyear', 'stargazer_three_hop_count_within_oneyear', 'stargazer_fourormore_hop_count_within_oneyear', 'total_rd_count_one_year', 'total_hn_count_one_year', 'total_tw_count_one_year', 'project_history_count')],
+                   
+c('repo_slug', 'one_hop_gh_user_count', 'two_hop_gh_user_count', 'three_hop_gh_user_count', 'total_gh_user_at_the_time_count', 'one_hop_dev_count', 'two_hop_dev_count', 'three_hop_dev_count', 'fourormore_hop_dev_count', 'one_hop_stargazer_count', 'two_hop_stargazer_count', 'three_hop_stargazer_count', 'fourormore_hop_stargazer_count', 'rd_count', 'hn_count',  'tw_count', 'project_history_count'))
+
+df_data$fourormore_hop_user_count = df_data$total_gh_user_at_the_time_count -  df_data$one_hop_gh_user_count - df_data$two_hop_gh_user_count - df_data$three_hop_gh_user_count
+
+if (community_name == 'R'){
+data_no_outlier = subset(df_data, tw_count < exp(4)
+                                &  hn_count < exp(1)
+                                &  rd_count < exp(1)
+                                &  one_hop_stargazer_count < exp(1.5)
+                                &  two_hop_stargazer_count < exp(2)
+                                &  three_hop_stargazer_count < exp(2)
+                                &  fourormore_hop_stargazer_count < exp(5)
+                                &  one_hop_dev_count < exp(1.5)
+                                &  two_hop_dev_count < exp(1.5)
+                                &  three_hop_dev_count < exp(1)
+                                &  fourormore_hop_dev_count < exp(2)
+                                &  one_hop_gh_user_count < exp(8)
+                                &  two_hop_gh_user_count < exp(12)
+                                &  fourormore_hop_user_count > exp(13)
+                                &  project_history_count > exp(2))
+}else{
+
+data_no_outlier = subset(df_data, tw_count < exp(5)
+                                 & hn_count < exp(2)
+                                 & rd_count < exp(2)
+                                 & one_hop_stargazer_count < exp(2)
+                                 & two_hop_stargazer_count < exp(3)
+                                 & three_hop_stargazer_count < exp(4)
+                                 & fourormore_hop_stargazer_count < exp(7)
+                                 & one_hop_dev_count < exp(2)
+                                 & two_hop_dev_count < exp(2)
+                                 & three_hop_dev_count < exp(2) 
+                                 & fourormore_hop_dev_count < exp(3)
+                                 & one_hop_gh_user_count < exp(8)
+                                 & two_hop_gh_user_count < exp(12)
+                                 & fourormore_hop_user_count >= exp(10)
+                                 & project_history_count > exp(2))
+
+}
+hist(log(df_data$tw_count+1))
+hist(log(df_data$hn_count+1))
+hist(log(df_data$rd_count+1))
+
+hist(log(df_data$one_hop_stargazer_count+1))
+hist(log(df_data$two_hop_stargazer_count+1))
+hist(log(df_data$three_hop_stargazer_count+1))
+hist(log(df_data$fourormore_hop_stargazer_count+1))
+
+hist(log(df_data$one_hop_dev_count+1))
+hist(log(df_data$two_hop_dev_count+1))
+hist(log(df_data$three_hop_dev_count+1))
+hist(log(df_data$fourormore_hop_dev_count+1))
+
+hist(log(df_data$one_hop_gh_user_count+1))
+hist(log(df_data$two_hop_gh_user_count+1))
+hist(log(df_data$three_hop_gh_user_count+1))
+hist(log(df_data$fourormore_hop_user_count+1))
+
+hist(log(df_data$project_history_count+1))
+
+# log scale the number of posts
+data_no_outlier$tw = log(data_no_outlier$tw_count + 1)
+data_no_outlier$hn = log(data_no_outlier$hn_count + 1)
+data_no_outlier$rd = log(data_no_outlier$rd_count + 1)
+
+
+```
+
+
+
+### Generate Figure 5 in the paper, step 2, regression for stargazer
+```{r}
+legend_font_size = 28
+title_size = 20
+hjust_length = 1
+y_tick_size = 18
+x_tick_size = 26
+axis_label_size = 22
+legend_title_size = 32
+width_middle = 1.0
+width_adjust = 0.225
+height_adjust = 0
+one_hop_color = 'red'
+two_hop_color = 'coral'
+three_hop_color = 'gold'
+fourormore_hop_color = 'darkgoldenrod'
+
+significance_level_text_size = 10
+
+
+generate_label <- function(p){
+  label = ""
+  if (p < 0.001)
+  {
+    label = '***'
+  } else if (p < 0.01){
+    label = '**'
+  } else if (p < 0.05){
+    label = '*'
+  }else{
+    label = ""
+  }
+  return(label)
+}
+
+one_hop_star = lm(log(one_hop_stargazer_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(one_hop_star)
+bootresults = boot.relimp(one_hop_star, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_onehop_star = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+two_hop_star = lm(log(two_hop_stargazer_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(two_hop_star)
+bootresults = boot.relimp(two_hop_star, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_twohop_star = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+three_hop_star = lm(log(three_hop_stargazer_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(three_hop_star)
+bootresults = boot.relimp(three_hop_star, b = 100)
+ci<-booteval.relimp(bootresults)
+
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_threehop_star = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+
+fourormore_hop_star = lm(log(fourormore_hop_stargazer_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(fourormore_hop_star)
+
+bootresults = boot.relimp(fourormore_hop_star, b = 100)
+ci<-booteval.relimp(bootresults)
+
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_fourormore_star = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+
+
+combined_table = combine(df_ci_onehop_star, df_ci_twohop_star,df_ci_threehop_star, df_ci_fourormore_star)
+combined_table$user_distance = ""
+combined_table[combined_table$source == 'df_ci_onehop_star',]$user_distance <- 'one hop'
+combined_table[combined_table$source == 'df_ci_twohop_star',]$user_distance <- 'two hop'
+combined_table[combined_table$source == 'df_ci_threehop_star',]$user_distance <- 'three hop'
+combined_table[combined_table$source == 'df_ci_fourormore_star',]$user_distance <- 'four or more hop'
+
+combined_table$type_name <- factor(combined_table$type_name, levels = c('TW', 'HN', 'RD', 'SO'))
+combined_table$user_distance <- factor(combined_table$user_distance, levels = c('one hop', 'two hop', 'three hop', 'four or more hop'))
+combined_table_tw = subset(combined_table, type_name == 'TW')
+combined_table_hn = subset(combined_table, type_name == 'HN')
+combined_table_rd = subset(combined_table, type_name == 'RD')
+
+tw_onehop_star_p = summary(one_hop_star)$coefficient['tw', ][4]
+tw_twohop_star_p = summary(two_hop_star)$coefficient['tw', ][4]
+tw_threehop_star_p = summary(three_hop_star)$coefficient['tw', ][4]
+tw_fourormore_star_p = summary(fourormore_hop_star)$coefficient['tw', ][4]
+
+tw_onehop_star_label = generate_label(tw_onehop_star_p)
+tw_twohop_star_label = generate_label(tw_twohop_star_p)
+tw_threehop_star_label = generate_label(tw_threehop_star_p)
+tw_fourormore_star_label = generate_label(tw_fourormore_star_p)
+
+p1_tw_star = ggplot(combined_table_tw, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color))+
+      geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  ylab('Ratio of variance explained')+
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+  geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(tw_onehop_star_label, tw_twohop_star_label, tw_threehop_star_label, tw_fourormore_star_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+
+guides(fill=guide_legend("user distance"))+ 
+  scale_x_discrete(labels = c('Twitter'))
+
+
+
+hn_onehop_star_p = summary(one_hop_star)$coefficient['hn', ][4]
+hn_twohop_star_p = summary(two_hop_star)$coefficient['hn', ][4]
+hn_threehop_star_p = summary(three_hop_star)$coefficient['hn', ][4]
+hn_fourormore_hop_star_p = summary(fourormore_hop_star)$coefficient['hn', ][4]
+
+hn_onehop_star_label = generate_label(hn_onehop_star_p)
+hn_twohop_star_label = generate_label(hn_twohop_star_p)
+hn_threehop_star_label = generate_label(hn_threehop_star_p)
+hn_fourormore_hop_star_label = generate_label(hn_fourormore_hop_star_p)
+
+
+
+p2_hn_star = ggplot(combined_table_hn, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color))+
+    geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+  geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(hn_onehop_star_label, hn_twohop_star_label, hn_threehop_star_label, hn_fourormore_hop_star_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+ 
+  scale_x_discrete(labels = c('HackerNews'))
+
+
+
+
+rd_onehop_star_p = summary(one_hop_star)$coefficient['rd', ][4]
+rd_twohop_star_p = summary(two_hop_star)$coefficient['rd', ][4]
+rd_threehop_star_p = summary(three_hop_star)$coefficient['rd', ][4]
+rd_fourormorehop_star_p = summary(fourormore_hop_star)$coefficient['rd', ][4]
+
+rd_onehop_star_label = generate_label(rd_onehop_star_p)
+rd_twohop_star_label = generate_label(rd_twohop_star_p)
+rd_threehop_star_label = generate_label(rd_threehop_star_p)
+rd_fourormore_star_label = generate_label(rd_fourormorehop_star_p)
+
+
+p3_rd_star = ggplot(combined_table_rd, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color))+
+    geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+  geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(rd_onehop_star_label, rd_twohop_star_label, rd_threehop_star_label, rd_fourormore_star_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+ 
+  scale_x_discrete(labels = c('Reddit'))
+
+
+
+```
+
+### Generate Figure 5 in the paper, step 3, regression for new developer
+```{r}
+one_hop_dev = lm(log(one_hop_dev_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(one_hop_dev)
+bootresults = boot.relimp(one_hop_dev, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_onehop_dev = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+two_hop_dev = lm(log(two_hop_dev_count + 1) ~
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(two_hop_dev)
+bootresults = boot.relimp(two_hop_dev, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_twohop_dev = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+three_hop_dev = lm(log(three_hop_dev_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(three_hop_dev)
+bootresults = boot.relimp(three_hop_dev, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_three_hop_dev = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+fourormore_hop_dev = lm(log(fourormore_hop_dev_count + 1) ~ 
+                   + tw
+                   + hn
+                   + rd
+                   + log(one_hop_gh_user_count + 1)
+                   + log(two_hop_gh_user_count + 1)
+                   + log(three_hop_gh_user_count + 1)
+                   + log(fourormore_hop_user_count + 1)
+                   + log(project_history_count + 1)
+                   , data = data_no_outlier)
+
+summary(fourormore_hop_dev)
+bootresults = boot.relimp(fourormore_hop_dev, b = 100)
+ci<-booteval.relimp(bootresults)
+lower_percentile = c(ci$lmg.lower[1], ci$lmg.lower[2], ci$lmg.lower[3])
+upper_percentile = c(ci$lmg.upper[1], ci$lmg.upper[2], ci$lmg.upper[3])
+mean_est = c(ci$est['tw.lmg'], ci$est['hn.lmg'], ci$est['rd.lmg'])
+type_name = c('TW', 'HN', 'RD')
+df_ci_fourormore_hop_dev = data.frame(lower_percentile, upper_percentile,mean_est,type_name)
+
+combined_table = combine(df_ci_onehop_dev,df_ci_twohop_dev, df_ci_three_hop_dev, df_ci_fourormore_hop_dev)
+
+combined_table$user_distance = ""
+combined_table[combined_table$source == 'df_ci_onehop_dev',]$user_distance <- 'one hop'
+combined_table[combined_table$source == 'df_ci_twohop_dev',]$user_distance <- 'two hop'
+combined_table[combined_table$source == 'df_ci_three_hop_dev',]$user_distance <- 'three hop'
+combined_table[combined_table$source == 'df_ci_fourormore_hop_dev',]$user_distance <- 'four or more hop'
+combined_table$type_name <- factor(combined_table$type_name, levels = c('TW', 'HN', 'RD'))
+combined_table$user_distance <- factor(combined_table$user_distance, levels = c('one hop', 'two hop', 'three hop', 'four or more hop'))
+combined_table_tw = subset(combined_table, type_name == 'TW')
+combined_table_hn = subset(combined_table, type_name == 'HN')
+combined_table_rd = subset(combined_table, type_name == 'RD')
+
+tw_onehop_dev_p = summary(one_hop_dev)$coefficient['tw', ][4]
+tw_twohop_dev_p = summary(two_hop_dev)$coefficient['tw', ][4]
+tw_threehop_dev_p = summary(three_hop_dev)$coefficient['tw', ][4]
+tw_fourormore_hop_dev_p = summary(fourormore_hop_dev)$coefficient['tw', ][4]
+
+tw_onehop_dev_label = generate_label(tw_onehop_dev_p)
+tw_twohop_dev_label = generate_label(tw_twohop_dev_p)
+tw_threehop_dev_label = generate_label(tw_threehop_dev_p)
+tw_fourormore_hop_dev_label = generate_label(tw_fourormore_hop_dev_p)
+
+
+p4_tw_dev = ggplot(combined_table_tw, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color ))+
+      geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  ylab('Ratio of variance explained')+
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+     geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(tw_onehop_dev_label, tw_twohop_dev_label, tw_threehop_dev_label, tw_fourormore_hop_dev_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+ 
+     guides(fill=guide_legend("user distance"))+ 
+  scale_x_discrete(labels = c( 'Twitter'))
+
+
+hn_onehop_dev_p = summary(one_hop_dev)$coefficient['hn', ][4]
+hn_twohop_dev_p = summary(two_hop_dev)$coefficient['hn', ][4]
+hn_threehop_dev_p = summary(three_hop_dev)$coefficient['hn', ][4]
+
+hn_fourormore_hop_dev_p = summary(fourormore_hop_dev)$coefficient['hn', ][4]
+
+hn_onehop_dev_label = generate_label(hn_onehop_dev_p)
+hn_twohop_dev_label = generate_label(hn_twohop_dev_p)
+hn_threehop_dev_label = generate_label(hn_threehop_dev_p)
+
+hn_fourormore_hop_dev_label = generate_label(hn_fourormore_hop_dev_p)
+
+
+p5_hn_dev = ggplot(combined_table_hn, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color ))+
+      geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+     geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(hn_onehop_dev_label, hn_twohop_dev_label,  hn_threehop_dev_label, hn_fourormore_hop_dev_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+ 
+  scale_x_discrete(labels = c( 'HackerNews'))
+
+
+rd_onehop_dev_p = summary(one_hop_dev)$coefficient['rd', ][4]
+rd_twohop_dev_p = summary(two_hop_dev)$coefficient['rd', ][4]
+rd_threehop_dev_p = summary(three_hop_dev)$coefficient['rd', ][4]
+rd_fourormore_hop_dev_p = summary(fourormore_hop_dev)$coefficient['rd', ][4]
+
+rd_onehop_dev_label = generate_label(rd_onehop_dev_p)
+rd_twohop_dev_label = generate_label(rd_twohop_dev_p)
+rd_threehop_dev_label = generate_label(rd_threehop_dev_p)
+rd_fourormore_hop_dev_label = generate_label(rd_fourormore_hop_dev_p)
+
+p6_rd_dev = ggplot(combined_table_rd, aes(fill=user_distance, y=mean_est, x=type_name)) + 
+    geom_bar(position="dodge", stat="identity")+
+scale_fill_manual('user_distance', values = c('one hop' = one_hop_color, 'two hop' = two_hop_color, 'three hop' = three_hop_color, 'four or more hop' = fourormore_hop_color ))+
+      geom_errorbar(aes(ymin=lower_percentile, ymax=upper_percentile), width=.2,
+                 position=position_dodge(.9)) +
+  theme(plot.title = element_text(hjust = 0.5,size = title_size),
+        legend.text = element_text(size=legend_font_size),
+        axis.text.y=element_text(size=y_tick_size),
+        axis.text.x=element_text(size=x_tick_size),
+        axis.title=element_text(size=axis_label_size),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank(),
+        legend.title=element_text(size=legend_title_size))+
+     geom_text(aes(x = c(width_middle - 1.5 *width_adjust, width_middle - 0.5 * width_adjust, width_middle + 0.5 * width_adjust, width_middle + 1.5 * width_adjust), label = c(rd_onehop_dev_label, rd_twohop_dev_label, rd_threehop_dev_label, rd_fourormore_hop_dev_label)), vjust = height_adjust, colour = "black", size = significance_level_text_size)+ 
+  scale_x_discrete(labels = c( 'Reddit'))
+
+
+
+p_star = ggarrange(p1_tw_star, p2_hn_star,p3_rd_star, ncol=3, nrow=1, common.legend = TRUE, legend="right") 
+p_star = annotate_figure(p_star, top = text_grob("Stargazer", 
+               color = "black", face = "bold", size = 36, hjust = hjust_length))
+
+p_dev = ggarrange(p4_tw_dev, p5_hn_dev,p6_rd_dev, ncol=3, nrow=1, common.legend = TRUE, legend="right") 
+p_dev = annotate_figure(p_dev, top = text_grob("Contributor", 
+               color = "black", face = "bold", size = 36, hjust = hjust_length))
+
+ggarrange(p_star, p_dev, ncol=1, nrow=2, common.legend = TRUE, legend="right")
+
+
+ggsave(file=sprintf('./figure/association_%s_oneyear.pdf', community_name), width=18, height=9, dpi=300)
+
+```
+
+
+
+
+
+
+### Validate figure 6 with the attracted developers and social media posts within one year after project creation
+```{r}
+
+legend_font_size = 28
+title_size = 40
+tick_size = 32
+axis_label_size = 28
+legend_title_size = 32
+plot_line_size = 3
+coef_hn_rd_so_star = 1
+coef_hn_rd_so_dev = 1
+
+onehop_dev_explained_tw = subset(df_ci_onehop_dev, type_name == 'TW')$mean_est[1] / sum(df_ci_onehop_dev$mean_est)
+onehop_dev_explained_hn = subset(df_ci_onehop_dev, type_name == 'HN')$mean_est[1] / sum(df_ci_onehop_dev$mean_est) * coef_hn_rd_so_dev
+onehop_dev_explained_rd = subset(df_ci_onehop_dev, type_name == 'RD')$mean_est[1] / sum(df_ci_onehop_dev$mean_est) * coef_hn_rd_so_dev
+
+relative_importance = c(onehop_dev_explained_tw, onehop_dev_explained_hn, onehop_dev_explained_rd)
+hop = c('one', 'one', 'one')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('dev', 'dev', 'dev')
+df_onehop_dev_ri = data.frame(relative_importance, hop,media, user_type)
+
+two_hop_dev_explained_tw = subset(df_ci_twohop_dev, type_name == 'TW')$mean_est[1] / sum(df_ci_twohop_dev$mean_est)
+two_hop_dev_explained_hn = subset(df_ci_twohop_dev, type_name == 'HN')$mean_est[1] / sum(df_ci_twohop_dev$mean_est) * coef_hn_rd_so_dev 
+two_hop_dev_explained_rd = subset(df_ci_twohop_dev, type_name == 'RD')$mean_est[1] / sum(df_ci_twohop_dev$mean_est) * coef_hn_rd_so_dev
+
+relative_importance = c(two_hop_dev_explained_tw, two_hop_dev_explained_hn, two_hop_dev_explained_rd)
+hop = c('two', 'two', 'two')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('dev', 'dev', 'dev')
+df_two_hop_dev_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+three_hop_dev_explained_tw = subset(df_ci_three_hop_dev, type_name == 'TW')$mean_est[1] / sum(df_ci_three_hop_dev$mean_est)
+three_hop_dev_explained_hn = subset(df_ci_three_hop_dev, type_name == 'HN')$mean_est[1] / sum(df_ci_three_hop_dev$mean_est) * coef_hn_rd_so_dev 
+three_hop_dev_explained_rd = subset(df_ci_three_hop_dev, type_name == 'RD')$mean_est[1] / sum(df_ci_three_hop_dev$mean_est) * coef_hn_rd_so_dev
+
+
+relative_importance = c(three_hop_dev_explained_tw, three_hop_dev_explained_hn, three_hop_dev_explained_rd)
+hop = c('three', 'three', 'three')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('dev', 'dev', 'dev')
+df_three_hop_dev_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+fourormore_hop_dev_explained_tw = subset(df_ci_fourormore_hop_dev, type_name == 'TW')$mean_est[1] / sum(df_ci_fourormore_hop_dev$mean_est)
+fourormore_hop_dev_explained_hn = subset(df_ci_fourormore_hop_dev, type_name == 'HN')$mean_est[1] / sum(df_ci_fourormore_hop_dev$mean_est) * coef_hn_rd_so_dev 
+fourormore_hop_dev_explained_rd = subset(df_ci_fourormore_hop_dev, type_name == 'RD')$mean_est[1] / sum(df_ci_fourormore_hop_dev$mean_est) * coef_hn_rd_so_dev
+
+relative_importance = c(fourormore_hop_dev_explained_tw, fourormore_hop_dev_explained_hn, fourormore_hop_dev_explained_rd)
+hop = c('four or more', 'four or more', 'four or more')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('dev', 'dev', 'dev')
+df_fourormore_hop_dev_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+
+onehop_star_explained_tw = subset(df_ci_onehop_star, type_name == 'TW')$mean_est[1] / sum(df_ci_onehop_star$mean_est)
+onehop_star_explained_hn = subset(df_ci_onehop_star, type_name == 'HN')$mean_est[1] / sum(df_ci_onehop_star$mean_est) * coef_hn_rd_so_star
+onehop_star_explained_rd = subset(df_ci_onehop_star, type_name == 'RD')$mean_est[1] / sum(df_ci_onehop_star$mean_est) * coef_hn_rd_so_star
+
+relative_importance = c(onehop_star_explained_tw, onehop_star_explained_hn, onehop_star_explained_rd)
+hop = c('one', 'one', 'one')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('star', 'star', 'star')
+df_onehop_star_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+twohop_star_explained_tw = subset(df_ci_twohop_star, type_name == 'TW')$mean_est[1] / sum(df_ci_twohop_star$mean_est)
+twohop_star_explained_hn = subset(df_ci_twohop_star, type_name == 'HN')$mean_est[1] / sum(df_ci_twohop_star$mean_est) * coef_hn_rd_so_star
+twohop_star_explained_rd = subset(df_ci_twohop_star, type_name == 'RD')$mean_est[1] / sum(df_ci_twohop_star$mean_est) * coef_hn_rd_so_star
+
+relative_importance = c(twohop_star_explained_tw, twohop_star_explained_hn, twohop_star_explained_rd)
+hop = c('two', 'two', 'two')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('star', 'star', 'star')
+df_twohop_star_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+threehop_star_explained_tw = subset(df_ci_threehop_star, type_name == 'TW')$mean_est[1] / sum(df_ci_threehop_star$mean_est)
+threehop_star_explained_hn = subset(df_ci_threehop_star, type_name == 'HN')$mean_est[1] / sum(df_ci_threehop_star$mean_est) * coef_hn_rd_so_star
+threehop_star_explained_rd = subset(df_ci_threehop_star, type_name == 'RD')$mean_est[1] / sum(df_ci_threehop_star$mean_est) * coef_hn_rd_so_star
+
+
+relative_importance = c(threehop_star_explained_tw, threehop_star_explained_hn, threehop_star_explained_rd)
+hop = c('three', 'three', 'three')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('star', 'star', 'star')
+df_threehop_star_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+fourormore_hop_star_explained_tw = subset(df_ci_fourormore_star, type_name == 'TW')$mean_est[1] / sum(df_ci_fourormore_star$mean_est)
+fourormore_hop_star_explained_hn = subset(df_ci_fourormore_star, type_name == 'HN')$mean_est[1] / sum(df_ci_fourormore_star$mean_est) * coef_hn_rd_so_star
+fourormore_hop_star_explained_rd = subset(df_ci_fourormore_star, type_name == 'RD')$mean_est[1] / sum(df_ci_fourormore_star$mean_est) * coef_hn_rd_so_star
+
+
+relative_importance = c(fourormore_hop_star_explained_tw, fourormore_hop_star_explained_hn, fourormore_hop_star_explained_rd)
+hop = c('four or more', 'four or more', 'four or more')
+media = c('Twitter', 'HackerNews', 'Reddit')
+user_type = c('star', 'star', 'star')
+df_fourormore_hop_star_ri = data.frame(relative_importance, hop,media, user_type)
+
+
+
+df = rbind(df_onehop_dev_ri,df_two_hop_dev_ri, df_three_hop_dev_ri, df_fourormore_hop_dev_ri, df_onehop_star_ri, df_twohop_star_ri, df_threehop_star_ri, df_fourormore_hop_star_ri)
+
+df$hop <- factor(df$hop, levels = c('one','two', 'three', 'four or more'))
+df$media <- factor(df$media, levels = c('Twitter', 'HackerNews', 'Reddit'))
+
+df_star = subset(df, user_type == 'star')
+df_dev = subset(df, user_type == 'dev')
+
+p1_star = ggplot(df_star,aes(x=hop, y=relative_importance, group=media, color=media))+
+  geom_line(size = plot_line_size) +
+    scale_colour_manual(values = c('Twitter' = "blue",'HackerNews' = "red", 'Reddit' = "orange"))+
+    scale_y_continuous(
+
+    # Features of the first axis
+    name = "Ratio of variance explained",
+
+    # Add a second axis and specify its features
+    # sec.axis = sec_axis(~.*1.0 / coef_hn_rd_so_star, name="Ratio of variance explained for HN, RD, SO")
+  )+
+  xlab('Stargazer network distance (in hops)')+
+  theme(plot.title = element_text(hjust = 0.5,size = title_size, face="bold"),
+        legend.text = element_text(size=legend_font_size),
+        axis.text=element_text(size=tick_size),
+        axis.title=element_text(size=axis_label_size),
+        legend.title=element_text(size=legend_title_size)) +
+   ggtitle('Stargazer')
+
+p1_dev = ggplot(df_dev,aes(x=hop, y=relative_importance, group=media, color=media))+
+  geom_line(size = plot_line_size) +
+    scale_colour_manual(values = c('Twitter' = "blue",'HackerNews' = "red", 'Reddit' = "orange"))+
+    scale_y_continuous(
+
+    # Features of the first axis
+    name = "Ratio of variance explained",
+
+    # Add a second axis and specify its features
+    # sec.axis = sec_axis(~.*1.0 / coef_hn_rd_so_dev, name="Percentage variance for HN, RD, SO")
+  ) +
+  # ggtitle("R projects")+
+  xlab('New contributor network distance (in hops)')+
+  theme(plot.title = element_text(hjust = 0.5,size = title_size, face="bold"),
+        legend.text = element_text(size=legend_font_size),
+        axis.text=element_text(size=tick_size),
+        axis.title=element_text(size=axis_label_size),
+        legend.title=element_text(size=legend_title_size))+
+   ggtitle('Contributor')
+
+ggarrange(p1_star, p1_dev, ncol=2, nrow=1, common.legend = TRUE, legend="right") 
+
+ggsave(file=sprintf('./figure/relative_importance_%s_oneyear.pdf', community_name), width=24, height=9, dpi=300)
+
+```
+
+
+
+
+
